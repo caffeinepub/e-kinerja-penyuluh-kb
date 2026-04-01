@@ -1,21 +1,30 @@
 import {
   type ReactNode,
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
 } from "react";
 import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
+import {
+  clearSessionParameter,
+  getPersistedUrlParameter,
+} from "../utils/urlParams";
 
 export type AuthRole = "admin" | "penyuluh" | null;
+
+const ADMIN_TOKEN = "ekinerja-admin-2024";
 
 interface AuthContextValue {
   role: AuthRole;
   isLoggedIn: boolean;
   isApproved: boolean;
   isLoadingAuth: boolean;
+  isTokenAuth: boolean;
   refetchAuth: () => void;
+  logoutToken: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -23,7 +32,9 @@ const AuthContext = createContext<AuthContextValue>({
   isLoggedIn: false,
   isApproved: false,
   isLoadingAuth: true,
+  isTokenAuth: false,
   refetchAuth: () => {},
+  logoutToken: () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -32,6 +43,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<AuthRole>(null);
   const [isApproved, setIsApproved] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [isTokenAuth, setIsTokenAuth] = useState(false);
+
+  const logoutToken = useCallback(() => {
+    clearSessionParameter("adminToken");
+    setIsTokenAuth(false);
+    setRole(null);
+    setIsApproved(false);
+  }, []);
+
   const refetchAuth = () => {
     if (!actor) return;
     setIsLoadingAuth(true);
@@ -48,6 +68,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    // Check for token-based admin auth first
+    const token = getPersistedUrlParameter("adminToken");
+    if (token === ADMIN_TOKEN) {
+      setRole("admin");
+      setIsApproved(true);
+      setIsTokenAuth(true);
+      setIsLoadingAuth(false);
+      return;
+    }
+
     if (isInitializing || isFetching) return;
     if (!identity || !actor) {
       setRole(null);
@@ -73,10 +103,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         role,
-        isLoggedIn: !!identity,
+        isLoggedIn: isTokenAuth || !!identity,
         isApproved,
         isLoadingAuth,
+        isTokenAuth,
         refetchAuth,
+        logoutToken,
       }}
     >
       {children}
