@@ -36,18 +36,6 @@ import {
   useAllWorkTargets,
 } from "../hooks/useQueries";
 
-const WILAYAH_OPTIONS = [
-  "all",
-  "Kecamatan Medan Kota",
-  "Kecamatan Medan Baru",
-  "Kecamatan Medan Timur",
-  "Kecamatan Medan Barat",
-  "Kecamatan Medan Selatan",
-  "Kecamatan Medan Utara",
-  "Kecamatan Medan Tembung",
-  "Kecamatan Medan Amplas",
-];
-
 function RatingBadge({ rating }: { rating: WorkRating }) {
   const map: Record<WorkRating, { label: string; className: string }> = {
     [WorkRating.baik]: {
@@ -88,6 +76,16 @@ export default function Rekapitulasi() {
     return ["all", ...Array.from(set).sort().reverse()];
   }, [targets]);
 
+  // Get unique kecamatan from employees
+  const wilayahOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const emp of employees) {
+      const kecamatan = emp.region.split(" | ")[0].trim();
+      if (kecamatan) set.add(kecamatan);
+    }
+    return ["all", ...Array.from(set).sort()];
+  }, [employees]);
+
   const stats = useMemo(() => {
     const empMap = new Map(employees.map((e) => [e.id.toString(), e]));
     const realMap = new Map(
@@ -97,8 +95,9 @@ export default function Rekapitulasi() {
     // Filter targets
     const filteredTargets = targets.filter((t) => {
       const emp = empMap.get(t.employeeId.toString());
+      const empKecamatan = emp?.region.split(" | ")[0].trim() ?? "";
       const matchWilayah =
-        filterWilayah === "all" || emp?.region === filterWilayah;
+        filterWilayah === "all" || empKecamatan === filterWilayah;
       const matchPeriod = filterPeriod === "all" || t.period === filterPeriod;
       return matchWilayah && matchPeriod;
     });
@@ -226,7 +225,7 @@ export default function Rekapitulasi() {
             <SelectValue placeholder="Semua Wilayah" />
           </SelectTrigger>
           <SelectContent>
-            {WILAYAH_OPTIONS.map((w) => (
+            {wilayahOptions.map((w) => (
               <SelectItem key={w} value={w}>
                 {w === "all" ? "Semua Wilayah" : w}
               </SelectItem>
@@ -350,7 +349,8 @@ export default function Rekapitulasi() {
               <TableRow className="bg-muted/40">
                 <TableHead className="w-12">Rank</TableHead>
                 <TableHead>Nama</TableHead>
-                <TableHead>Wilayah</TableHead>
+                <TableHead>Kecamatan</TableHead>
+                <TableHead>Kabupaten/Kota</TableHead>
                 <TableHead className="text-right">Total Target</TableHead>
                 <TableHead className="text-right">Selesai</TableHead>
                 <TableHead className="text-right">Avg Capaian</TableHead>
@@ -361,7 +361,7 @@ export default function Rekapitulasi() {
               {stats.ranking.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={8}
                     className="text-center py-8 text-muted-foreground"
                     data-ocid="rekapitulasi.empty_state"
                   >
@@ -369,60 +369,70 @@ export default function Rekapitulasi() {
                   </TableCell>
                 </TableRow>
               ) : (
-                stats.ranking.map((r, idx) => (
-                  <TableRow
-                    key={r.empId}
-                    data-ocid={`rekapitulasi.item.${idx + 1}`}
-                  >
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold ${
-                          r.rank === 1
-                            ? "bg-amber-100 text-amber-700"
-                            : r.rank === 2
-                              ? "bg-gray-100 text-gray-700"
-                              : r.rank === 3
-                                ? "bg-orange-100 text-orange-700"
-                                : "text-muted-foreground"
-                        }`}
-                      >
-                        {r.rank}
-                      </span>
-                    </TableCell>
-                    <TableCell className="font-medium text-sm">
-                      {r.emp?.fullName ?? r.empId}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {r.emp?.region ?? "-"}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {r.totalTargets}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {r.totalRealized}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <span
-                        className={`font-semibold text-sm ${
-                          r.avg >= 80
-                            ? "text-green-600"
-                            : r.avg >= 60
-                              ? "text-amber-600"
-                              : "text-red-600"
-                        }`}
-                      >
-                        {r.avg}%
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {r.dominantRating ? (
-                        <RatingBadge rating={r.dominantRating} />
-                      ) : (
-                        <span className="text-muted-foreground text-sm">-</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
+                stats.ranking.map((r, idx) => {
+                  const regionParts = r.emp?.region?.split(" | ") ?? [];
+                  const kecamatan = regionParts[0]?.trim() ?? "-";
+                  const kabupaten = regionParts[1]?.trim() ?? "-";
+                  return (
+                    <TableRow
+                      key={r.empId}
+                      data-ocid={`rekapitulasi.item.${idx + 1}`}
+                    >
+                      <TableCell>
+                        <span
+                          className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold ${
+                            r.rank === 1
+                              ? "bg-amber-100 text-amber-700"
+                              : r.rank === 2
+                                ? "bg-gray-100 text-gray-700"
+                                : r.rank === 3
+                                  ? "bg-orange-100 text-orange-700"
+                                  : "text-muted-foreground"
+                          }`}
+                        >
+                          {r.rank}
+                        </span>
+                      </TableCell>
+                      <TableCell className="font-medium text-sm">
+                        {r.emp?.fullName ?? r.empId}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {kecamatan}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {kabupaten}
+                      </TableCell>
+                      <TableCell className="text-right text-sm">
+                        {r.totalTargets}
+                      </TableCell>
+                      <TableCell className="text-right text-sm">
+                        {r.totalRealized}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span
+                          className={`font-semibold text-sm ${
+                            r.avg >= 80
+                              ? "text-green-600"
+                              : r.avg >= 60
+                                ? "text-amber-600"
+                                : "text-red-600"
+                          }`}
+                        >
+                          {r.avg}%
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {r.dominantRating ? (
+                          <RatingBadge rating={r.dominantRating} />
+                        ) : (
+                          <span className="text-muted-foreground text-sm">
+                            -
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
