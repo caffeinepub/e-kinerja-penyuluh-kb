@@ -10,17 +10,11 @@ const ACTOR_QUERY_KEY = "actor";
 export function useActor() {
   const { identity } = useInternetIdentity();
   const queryClient = useQueryClient();
-
-  const isLocalAdmin = localStorage.getItem("localAdminMode") === "true";
-
   const actorQuery = useQuery<backendInterface>({
-    queryKey: [
-      ACTOR_QUERY_KEY,
-      isLocalAdmin ? "local" : identity?.getPrincipal().toString(),
-    ],
+    queryKey: [ACTOR_QUERY_KEY, identity?.getPrincipal().toString()],
     queryFn: async () => {
       // Use local backend when admin is in local mode
-      if (isLocalAdmin) {
+      if (localStorage.getItem("localAdminMode") === "true") {
         return createLocalBackend();
       }
 
