@@ -24,8 +24,10 @@ interface AuthContextValue {
   isLoadingAuth: boolean;
   isTokenAuth: boolean;
   hasAdminToken: boolean;
+  isLocalAdmin: boolean;
   refetchAuth: () => void;
   logoutToken: () => void;
+  logoutLocalAdmin: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -35,8 +37,10 @@ const AuthContext = createContext<AuthContextValue>({
   isLoadingAuth: true,
   isTokenAuth: false,
   hasAdminToken: false,
+  isLocalAdmin: false,
   refetchAuth: () => {},
   logoutToken: () => {},
+  logoutLocalAdmin: () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -49,13 +53,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Check if admin token is present (from URL or session)
   const hasAdminToken = getPersistedUrlParameter("adminToken") === ADMIN_TOKEN;
 
+  // Check if local admin mode is active (password-based login)
+  const isLocalAdmin = localStorage.getItem("localAdminMode") === "true";
+
   const logoutToken = useCallback(() => {
     clearSessionParameter("adminToken");
     setRole(null);
     setIsApproved(false);
   }, []);
 
+  const logoutLocalAdmin = useCallback(() => {
+    localStorage.removeItem("localAdminMode");
+    window.location.reload();
+  }, []);
+
   const refetchAuth = () => {
+    if (isLocalAdmin) {
+      setRole("admin");
+      setIsApproved(true);
+      setIsLoadingAuth(false);
+      return;
+    }
     if (!actor) return;
     setIsLoadingAuth(true);
     Promise.all([actor.isCallerAdmin(), actor.isCallerApproved()])
@@ -71,6 +89,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    // Local admin mode: skip Internet Identity entirely
+    if (isLocalAdmin) {
+      setRole("admin");
+      setIsApproved(true);
+      setIsLoadingAuth(false);
+      return;
+    }
+
     if (isInitializing || isFetching) return;
     if (!identity || !actor) {
       setRole(null);
@@ -90,19 +116,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => setIsLoadingAuth(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity, actor, isFetching, isInitializing]);
+  }, [identity, actor, isFetching, isInitializing, isLocalAdmin]);
 
   return (
     <AuthContext.Provider
       value={{
         role,
-        isLoggedIn: !!identity,
+        isLoggedIn: isLocalAdmin || !!identity,
         isApproved,
         isLoadingAuth,
         isTokenAuth: hasAdminToken,
         hasAdminToken,
+        isLocalAdmin,
         refetchAuth,
         logoutToken,
+        logoutLocalAdmin,
       }}
     >
       {children}

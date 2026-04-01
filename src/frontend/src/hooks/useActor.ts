@@ -2,10 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import type { backendInterface } from "../backend";
 import { createActorWithConfig } from "../config";
-import {
-  getPersistedUrlParameter,
-  getSecretParameter,
-} from "../utils/urlParams";
+import { getSecretParameter } from "../utils/urlParams";
 import { useInternetIdentity } from "./useInternetIdentity";
 
 const ACTOR_QUERY_KEY = "actor";
@@ -15,6 +12,13 @@ export function useActor() {
   const actorQuery = useQuery<backendInterface>({
     queryKey: [ACTOR_QUERY_KEY, identity?.getPrincipal().toString()],
     queryFn: async () => {
+      // Local admin mode: bypass Internet Identity entirely
+      const isLocalAdmin = localStorage.getItem("localAdminMode") === "true";
+      if (isLocalAdmin) {
+        const { createLocalBackend } = await import("../mocks/localBackend");
+        return createLocalBackend();
+      }
+
       const isAuthenticated = !!identity;
 
       if (!isAuthenticated) {
@@ -29,11 +33,7 @@ export function useActor() {
       };
 
       const actor = await createActorWithConfig(actorOptions);
-      // Check caffeineAdminToken from hash first, then fall back to adminToken from URL/session
-      const adminToken =
-        getSecretParameter("caffeineAdminToken") ||
-        getPersistedUrlParameter("adminToken") ||
-        "";
+      const adminToken = getSecretParameter("caffeineAdminToken") || "";
       await actor._initializeAccessControlWithSecret(adminToken);
       return actor;
     },

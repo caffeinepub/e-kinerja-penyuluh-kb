@@ -1,8 +1,11 @@
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { KeyRound, Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { motion } from "motion/react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { useAuth } from "../context/AuthContext";
+import { ADMIN_TOKEN, useAuth } from "../context/AuthContext";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useRequestApproval } from "../hooks/useQueries";
 
@@ -14,6 +17,8 @@ export default function LoginPage({ mode }: LoginPageProps) {
   const { login, isLoggingIn, clear } = useInternetIdentity();
   const { refetchAuth, hasAdminToken } = useAuth();
   const requestApproval = useRequestApproval();
+  const [adminPassword, setAdminPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleRequestApproval = async () => {
     try {
@@ -22,6 +27,18 @@ export default function LoginPage({ mode }: LoginPageProps) {
       refetchAuth();
     } catch {
       toast.error("Gagal mengirim permintaan persetujuan.");
+    }
+  };
+
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    if (adminPassword === ADMIN_TOKEN) {
+      localStorage.setItem("localAdminMode", "true");
+      window.location.reload();
+    } else {
+      toast.error("Password salah. Periksa kembali password admin Anda.");
+      setIsSubmitting(false);
     }
   };
 
@@ -68,36 +85,117 @@ export default function LoginPage({ mode }: LoginPageProps) {
 
         {mode === "login" ? (
           <>
-            {hasAdminToken && (
-              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mb-4">
-                <KeyRound size={14} className="text-green-600 shrink-0" />
-                <p className="text-xs text-green-700">
-                  Token admin terdeteksi. Login untuk masuk sebagai Admin.
+            {hasAdminToken ? (
+              /* Admin password form */
+              <>
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mb-5">
+                  <KeyRound size={14} className="text-green-600 shrink-0" />
+                  <p className="text-xs text-green-700">
+                    Token admin terdeteksi. Masukkan password untuk akses penuh.
+                  </p>
+                </div>
+
+                <form onSubmit={handleAdminLogin} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor="admin-password"
+                      className="text-sm font-medium"
+                    >
+                      Password Admin
+                    </Label>
+                    <Input
+                      id="admin-password"
+                      data-ocid="login.input"
+                      type="password"
+                      placeholder="Masukkan password admin"
+                      value={adminPassword}
+                      onChange={(e) => setAdminPassword(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+
+                  <Button
+                    data-ocid="login.primary_button"
+                    type="submit"
+                    className="w-full"
+                    size="lg"
+                    disabled={isSubmitting || !adminPassword}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin mr-2" />
+                        Memproses...
+                      </>
+                    ) : (
+                      <>
+                        <KeyRound size={16} className="mr-2" />
+                        Masuk sebagai Admin
+                      </>
+                    )}
+                  </Button>
+                </form>
+
+                <div className="relative my-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-2 text-muted-foreground">
+                      atau
+                    </span>
+                  </div>
+                </div>
+
+                <Button
+                  data-ocid="login.secondary_button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={login}
+                  disabled={isLoggingIn}
+                >
+                  {isLoggingIn ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin mr-2" />
+                      Menghubungkan...
+                    </>
+                  ) : (
+                    <>
+                      <LogIn size={16} className="mr-2" />
+                      Masuk dengan Internet Identity
+                    </>
+                  )}
+                </Button>
+                <p className="text-center text-xs text-muted-foreground mt-3">
+                  Untuk Penyuluh KB — gunakan Internet Identity
                 </p>
-              </div>
+              </>
+            ) : (
+              /* Regular Internet Identity login */
+              <>
+                <Button
+                  data-ocid="login.primary_button"
+                  className="w-full"
+                  size="lg"
+                  onClick={login}
+                  disabled={isLoggingIn}
+                >
+                  {isLoggingIn ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin mr-2" />
+                      Menghubungkan...
+                    </>
+                  ) : (
+                    <>
+                      <LogIn size={16} className="mr-2" /> Masuk dengan Internet
+                      Identity
+                    </>
+                  )}
+                </Button>
+                <p className="text-center text-xs text-muted-foreground mt-4">
+                  Gunakan Internet Identity untuk autentikasi yang aman.
+                </p>
+              </>
             )}
-            <Button
-              data-ocid="login.primary_button"
-              className="w-full"
-              size="lg"
-              onClick={login}
-              disabled={isLoggingIn}
-            >
-              {isLoggingIn ? (
-                <>
-                  <Loader2 size={16} className="animate-spin mr-2" />{" "}
-                  Menghubungkan...
-                </>
-              ) : (
-                <>
-                  <LogIn size={16} className="mr-2" /> Masuk dengan Internet
-                  Identity
-                </>
-              )}
-            </Button>
-            <p className="text-center text-xs text-muted-foreground mt-4">
-              Gunakan Internet Identity untuk autentikasi yang aman.
-            </p>
           </>
         ) : (
           <>
@@ -116,7 +214,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
             >
               {requestApproval.isPending ? (
                 <>
-                  <Loader2 size={16} className="animate-spin mr-2" />{" "}
+                  <Loader2 size={16} className="animate-spin mr-2" />
                   Mengirim...
                 </>
               ) : (

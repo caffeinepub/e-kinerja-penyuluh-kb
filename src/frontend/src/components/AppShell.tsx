@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ClipboardList,
   Download,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -95,16 +96,26 @@ export function AppShell({
   notifCount = 0,
 }: AppShellProps) {
   const { clear, identity } = useInternetIdentity();
-  const { role } = useAuth();
+  const { role, isLocalAdmin, logoutLocalAdmin } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const principalStr = identity?.getPrincipal().toString() ?? "";
-  const shortPrincipal = `${principalStr.slice(0, 5)}...${principalStr.slice(-3)}`;
+  const shortPrincipal = isLocalAdmin
+    ? "Admin Lokal"
+    : `${principalStr.slice(0, 5)}...${principalStr.slice(-3)}`;
 
   const visibleNav = NAV_ITEMS.filter((item) => {
     if (item.adminOnly && role !== "admin") return false;
     return true;
   });
+
+  const handleLogout = () => {
+    if (isLocalAdmin) {
+      logoutLocalAdmin();
+    } else {
+      clear();
+    }
+  };
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -170,18 +181,29 @@ export function AppShell({
             <p className="text-white text-xs font-medium truncate">
               {shortPrincipal}
             </p>
-            <Badge
-              variant="outline"
-              className="text-white/70 border-white/30 text-[10px] px-1 py-0"
-            >
-              {role === "admin" ? "Admin" : "Penyuluh"}
-            </Badge>
+            <div className="flex items-center gap-1">
+              <Badge
+                variant="outline"
+                className="text-white/70 border-white/30 text-[10px] px-1 py-0"
+              >
+                {role === "admin" ? "Admin" : "Penyuluh"}
+              </Badge>
+              {isLocalAdmin && (
+                <Badge
+                  variant="outline"
+                  className="text-emerald-300 border-emerald-400/40 text-[10px] px-1 py-0 flex items-center gap-0.5"
+                >
+                  <KeyRound size={8} />
+                  Lokal
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
         <button
           type="button"
           data-ocid="nav.logout.button"
-          onClick={clear}
+          onClick={handleLogout}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 text-sm transition-colors"
         >
           <LogOut size={16} />
