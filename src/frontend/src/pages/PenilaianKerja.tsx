@@ -20,8 +20,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { FileText, Loader2, Paperclip, Trash2, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { WorkRating } from "../backend";
 import type { WorkRealization, WorkTarget } from "../backend";
@@ -33,6 +33,40 @@ import {
   useCreateWorkRealization,
   useUpdateWorkRealization,
 } from "../hooks/useQueries";
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const LAMPIRAN_KEY = (targetId: string) => `lampiran_${targetId}`;
+
+interface LampiranData {
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+  uploadedAt: number;
+}
+
+function getLampiran(targetId: string): LampiranData | null {
+  try {
+    const raw = localStorage.getItem(LAMPIRAN_KEY(targetId));
+    return raw ? (JSON.parse(raw) as LampiranData) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLampiran(targetId: string, data: LampiranData) {
+  localStorage.setItem(LAMPIRAN_KEY(targetId), JSON.stringify(data));
+}
+
+function removeLampiran(targetId: string) {
+  localStorage.removeItem(LAMPIRAN_KEY(targetId));
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function calcRating(pct: number): WorkRating {
   if (pct >= 80) return WorkRating.baik;
@@ -83,6 +117,18 @@ export default function PenilaianKerja() {
   const [realizedValue, setRealizedValue] = useState("");
   const [supervisorNotes, setSupervisorNotes] = useState("");
 
+  // Lampiran state
+  const [pendingLampiran, setPendingLampiran] = useState<LampiranData | null>(
+    null,
+  );
+  const [existingLampiran, setExistingLampiran] = useState<LampiranData | null>(
+    null,
+  );
+  const [removeExisting, setRemoveExisting] = useState(false);
+  const [isReadingFile, setIsReadingFile] = useState(false);
+  const [lampiranVersion, setLampiranVersion] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const isLoading = loadT || loadR;
 
   const empMap = useMemo(
@@ -101,7 +147,42 @@ export default function PenilaianKerja() {
     setExistingReal(existing);
     setRealizedValue(existing ? String(existing.realizedValue) : "");
     setSupervisorNotes(existing?.supervisorNotes ?? "");
+    // Load lampiran
+    const lmp = getLampiran(target.id.toString());
+    setExistingLampiran(lmp);
+    setPendingLampiran(null);
+    setRemoveExisting(false);
     setModalOpen(true);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error("Ukuran file maksimal 5 MB.");
+      e.target.value = "";
+      return;
+    }
+    setIsReadingFile(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setPendingLampiran({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        dataUrl,
+        uploadedAt: Date.now(),
+      });
+      setRemoveExisting(false);
+      setIsReadingFile(false);
+    };
+    reader.onerror = () => {
+      toast.error("Gagal membaca file.");
+      setIsReadingFile(false);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
   };
 
   const handleSave = async () => {
@@ -127,10 +208,24 @@ export default function PenilaianKerja() {
         });
         toast.success("Realisasi berhasil disimpan.");
       }
+      // Handle lampiran persistence
+      const tid = selectedTarget.id.toString();
+      if (pendingLampiran) {
+        saveLampiran(tid, pendingLampiran);
+      } else if (removeExisting) {
+        removeLampiran(tid);
+      }
+      setLampiranVersion((v) => v + 1);
       setModalOpen(false);
     } catch {
       toast.error("Gagal menyimpan realisasi.");
     }
+  };
+
+  const handleDeleteLampiranFromTable = (targetId: string) => {
+    removeLampiran(targetId);
+    setLampiranVersion((v) => v + 1);
+    toast.success("Lampiran dihapus.");
   };
 
   const isSaving = createReal.isPending || updateReal.isPending;
@@ -141,6 +236,11 @@ export default function PenilaianKerja() {
       ? Math.round((Number(realizedValue) / selectedTarget.targetValue) * 100)
       : null;
   const previewRating = previewPct !== null ? calcRating(previewPct) : null;
+
+  // Determine if there's any lampiran to display in modal
+  // hasLampiran computed inline via activeLampiran
+  const activeLampiran =
+    pendingLampiran ?? (removeExisting ? null : existingLampiran);
 
   if (isLoading) {
     return (
@@ -158,6 +258,9 @@ export default function PenilaianKerja() {
         {allTargets.length} target terdaftar
       </p>
 
+      {/* lampiranVersion used to trigger re-render when lampiran changes */}
+      <span data-lampiran-version={lampiranVersion} className="hidden" />
+
       <div className="bg-card rounded-lg border border-border shadow-card overflow-auto">
         <Table>
           <TableHeader>
@@ -170,6 +273,7 @@ export default function PenilaianKerja() {
               <TableHead className="text-right">Capaian</TableHead>
               <TableHead>Penilaian</TableHead>
               <TableHead>Catatan</TableHead>
+              <TableHead>Lampiran</TableHead>
               <TableHead>Aksi</TableHead>
             </TableRow>
           </TableHeader>
@@ -177,7 +281,7 @@ export default function PenilaianKerja() {
             {allTargets.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={isAdmin ? 9 : 8}
+                  colSpan={isAdmin ? 10 : 9}
                   className="text-center py-10 text-muted-foreground"
                   data-ocid="penilaian.empty_state"
                 >
@@ -187,6 +291,7 @@ export default function PenilaianKerja() {
             ) : (
               allTargets.map((t, idx) => {
                 const real = realMap.get(t.id.toString());
+                const lmp = getLampiran(t.id.toString());
                 return (
                   <TableRow
                     key={t.id.toString()}
@@ -249,6 +354,34 @@ export default function PenilaianKerja() {
                     </TableCell>
                     <TableCell className="max-w-36 truncate text-xs text-muted-foreground">
                       {real?.supervisorNotes || "-"}
+                    </TableCell>
+                    <TableCell className="min-w-32">
+                      {lmp ? (
+                        <div className="flex items-center gap-1">
+                          <a
+                            href={lmp.dataUrl}
+                            download={lmp.name}
+                            className="flex items-center gap-1 text-xs text-primary hover:underline max-w-24 truncate"
+                            title={lmp.name}
+                          >
+                            <FileText size={12} className="shrink-0" />
+                            <span className="truncate">{lmp.name}</span>
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDeleteLampiranFromTable(t.id.toString())
+                            }
+                            className="text-muted-foreground hover:text-destructive transition-colors"
+                            title="Hapus lampiran"
+                            data-ocid={`penilaian.delete_button.${idx + 1}`}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">-</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Button
@@ -326,6 +459,112 @@ export default function PenilaianKerja() {
                   {previewRating && <RatingBadge rating={previewRating} />}
                 </div>
               )}
+
+              {/* Lampiran Section */}
+              <div className="space-y-2">
+                <Label>Lampiran</Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+                {activeLampiran ? (
+                  <div className="border border-border rounded-lg p-3 space-y-2">
+                    {pendingLampiran ? (
+                      <div className="flex items-center gap-2">
+                        <FileText size={16} className="text-primary shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {pendingLampiran.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatBytes(pendingLampiran.size)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPendingLampiran(null)}
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          title="Hapus"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ) : existingLampiran && !removeExisting ? (
+                      <div className="flex items-center gap-2">
+                        <FileText size={16} className="text-primary shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <a
+                            href={existingLampiran.dataUrl}
+                            download={existingLampiran.name}
+                            className="text-sm font-medium text-primary hover:underline truncate block"
+                          >
+                            {existingLampiran.name}
+                          </a>
+                          <p className="text-xs text-muted-foreground">
+                            {formatBytes(existingLampiran.size)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setRemoveExisting(true)}
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          title="Hapus"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      disabled={isReadingFile}
+                      onClick={() => fileInputRef.current?.click()}
+                      data-ocid="penilaian.upload_button"
+                    >
+                      <Paperclip size={14} className="mr-2" />
+                      {isReadingFile ? "Membaca file..." : "Ganti Lampiran"}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {removeExisting && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-center justify-between text-xs">
+                        <span className="text-amber-700">
+                          Lampiran akan dihapus saat disimpan
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRemoveExisting(false)}
+                          className="text-amber-700 hover:text-amber-900 font-medium underline"
+                        >
+                          Urungkan
+                        </button>
+                      </div>
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      disabled={isReadingFile}
+                      onClick={() => fileInputRef.current?.click()}
+                      data-ocid="penilaian.upload_button"
+                    >
+                      <Paperclip size={14} className="mr-2" />
+                      {isReadingFile ? "Membaca file..." : "Pilih File"}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      PDF, Word, Excel, JPG, PNG — maks. 5 MB
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {isAdmin && (
                 <div className="space-y-1.5">
                   <Label>Catatan Evaluasi (Atasan)</Label>

@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import type { backendInterface } from "../backend";
 import { createActorWithConfig } from "../config";
+import { createLocalBackend } from "../mocks/localBackend";
 import { getSecretParameter } from "../utils/urlParams";
 import { useInternetIdentity } from "./useInternetIdentity";
 
@@ -9,13 +10,19 @@ const ACTOR_QUERY_KEY = "actor";
 export function useActor() {
   const { identity } = useInternetIdentity();
   const queryClient = useQueryClient();
+
+  // Check local admin mode directly from localStorage
+  const isLocalAdmin = localStorage.getItem("localAdminMode") === "true";
+
   const actorQuery = useQuery<backendInterface>({
-    queryKey: [ACTOR_QUERY_KEY, identity?.getPrincipal().toString()],
+    queryKey: [
+      ACTOR_QUERY_KEY,
+      identity?.getPrincipal().toString(),
+      isLocalAdmin ? "local" : "remote",
+    ],
     queryFn: async () => {
-      // Local admin mode: bypass Internet Identity entirely
-      const isLocalAdmin = localStorage.getItem("localAdminMode") === "true";
+      // Use local mock backend when in local admin mode
       if (isLocalAdmin) {
-        const { createLocalBackend } = await import("../mocks/localBackend");
         return createLocalBackend();
       }
 
