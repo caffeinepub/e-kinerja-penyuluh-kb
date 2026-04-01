@@ -57,6 +57,28 @@ type StoredWorkRealization = Omit<
   evaluatedAt: number;
 };
 
+// Pending approval with employee form data
+export interface PendingApprovalEmployeeData {
+  nip: string;
+  fullName: string;
+  birthPlace: string;
+  birthDate: string;
+  gender: string;
+  position: string;
+  kecamatan: string;
+  kabupaten: string;
+  provinsi: string;
+  phone: string;
+  email: string;
+}
+
+type StoredPendingApproval = {
+  principal: string;
+  status: string;
+  requestedAt: number;
+  employeeData?: PendingApprovalEmployeeData;
+};
+
 function toEmployee(s: StoredEmployee): Employee {
   return {
     ...s,
@@ -329,9 +351,29 @@ export function createLocalBackend(): backendInterface {
 
     getAllAuditLogs: async (): Promise<AuditLog[]> => [],
     getAuditLogsByUserId: async (_userId: Principal): Promise<AuditLog[]> => [],
-    listApprovals: async (): Promise<UserApprovalInfo[]> => [],
+    listApprovals: async (): Promise<UserApprovalInfo[]> => {
+      const pending = getStore<StoredPendingApproval>(
+        "ekinerja_pending_approvals",
+      );
+      return pending.map((p) => ({
+        principal: {
+          toString: () => p.principal,
+          toText: () => p.principal,
+        } as Principal,
+        status: p.status as ApprovalStatus,
+      }));
+    },
     requestApproval: async () => {},
-    setApproval: async (_user: Principal, _status: ApprovalStatus) => {},
+    setApproval: async (user: Principal, status: ApprovalStatus) => {
+      const stored = getStore<StoredPendingApproval>(
+        "ekinerja_pending_approvals",
+      );
+      const idx = stored.findIndex((p) => p.principal === user.toString());
+      if (idx !== -1) {
+        stored[idx].status = status;
+        setStore("ekinerja_pending_approvals", stored);
+      }
+    },
     assignCallerUserRole: async (_user: Principal, _role: UserRole) => {},
     uploadEmployeePhoto: async (_id: EmployeeId, _photo: unknown) => {},
 

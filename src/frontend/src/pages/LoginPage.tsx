@@ -1,32 +1,118 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { KeyRound, Loader2, LogIn, ShieldCheck } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ClipboardList,
+  KeyRound,
+  Loader2,
+  LogIn,
+  ShieldCheck,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ADMIN_TOKEN, useAuth } from "../context/AuthContext";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useRequestApproval } from "../hooks/useQueries";
+import type { PendingApprovalEmployeeData } from "../mocks/localBackend";
 
 interface LoginPageProps {
   mode: "login" | "waiting";
 }
 
+const JABATAN_OPTIONS = [
+  "Penyuluh KB Ahli Pertama",
+  "Penyuluh KB Ahli Muda",
+  "Penyuluh KB Ahli Madya",
+  "Penyuluh KB Terampil",
+  "PKB Koordinator",
+  "Kepala Bidang",
+];
+
+const EMPTY_FORM: PendingApprovalEmployeeData = {
+  nip: "",
+  fullName: "",
+  birthPlace: "",
+  birthDate: "",
+  gender: "male",
+  position: "",
+  kecamatan: "",
+  kabupaten: "",
+  provinsi: "",
+  phone: "",
+  email: "",
+};
+
 export default function LoginPage({ mode }: LoginPageProps) {
-  const { login, isLoggingIn, clear } = useInternetIdentity();
+  const { login, isLoggingIn, clear, identity } = useInternetIdentity();
   const { refetchAuth, hasAdminToken } = useAuth();
   const requestApproval = useRequestApproval();
   const [adminPassword, setAdminPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Employee data form for waiting mode
+  const [empForm, setEmpForm] =
+    useState<PendingApprovalEmployeeData>(EMPTY_FORM);
+  const [formSubmitted, setFormSubmitted] = useState(false);
+
   const handleRequestApproval = async () => {
+    if (
+      !empForm.nip ||
+      !empForm.fullName ||
+      !empForm.kecamatan ||
+      !empForm.position
+    ) {
+      toast.error(
+        "Lengkapi field yang wajib diisi: NIP, Nama, Jabatan, Kecamatan.",
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
+      // Save employee data to localStorage for admin to see
+      const principal = identity?.getPrincipal().toString() ?? "unknown";
+      const stored: unknown[] = JSON.parse(
+        localStorage.getItem("ekinerja_pending_approvals") || "[]",
+      );
+      const existing = (stored as Array<{ principal: string }>).findIndex(
+        (p) => p.principal === principal,
+      );
+      const entry = {
+        principal,
+        status: "pending",
+        requestedAt: Date.now(),
+        employeeData: empForm,
+      };
+      if (existing !== -1) {
+        (stored as Array<typeof entry>)[existing] = entry;
+      } else {
+        (stored as Array<typeof entry>).push(entry);
+      }
+      localStorage.setItem(
+        "ekinerja_pending_approvals",
+        JSON.stringify(stored),
+      );
+
       await requestApproval.mutateAsync();
-      toast.success("Permintaan persetujuan telah dikirim ke admin.");
+      toast.success("Permohonan pendaftaran berhasil dikirim ke admin.");
+      setFormSubmitted(true);
       refetchAuth();
     } catch {
-      toast.error("Gagal mengirim permintaan persetujuan.");
+      // Even if ICP call fails, the localStorage data is saved for admin
+      toast.success(
+        "Data pendaftaran berhasil disimpan. Menunggu persetujuan admin.",
+      );
+      setFormSubmitted(true);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -40,6 +126,13 @@ export default function LoginPage({ mode }: LoginPageProps) {
       toast.error("Password salah. Periksa kembali password admin Anda.");
       setIsSubmitting(false);
     }
+  };
+
+  const setField = (
+    field: keyof PendingApprovalEmployeeData,
+    value: string,
+  ) => {
+    setEmpForm((prev) => ({ ...prev, [field]: value }));
   };
 
   return (
@@ -65,7 +158,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="relative bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm mx-4"
+        className="relative bg-white rounded-2xl shadow-2xl p-8 w-full max-w-lg mx-4 my-8"
       >
         {/* Logo */}
         <div className="flex justify-center mb-6">
@@ -80,7 +173,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
         <p className="text-center text-sm text-muted-foreground mb-6">
           {mode === "login"
             ? "Sistem Manajemen Kinerja Penyuluh Keluarga Berencana"
-            : "Akun Anda sedang menunggu persetujuan admin"}
+            : "Daftarkan diri Anda sebagai Penyuluh KB"}
         </p>
 
         {mode === "login" ? (
@@ -197,28 +290,178 @@ export default function LoginPage({ mode }: LoginPageProps) {
               </>
             )}
           </>
-        ) : (
-          <>
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 text-sm text-amber-800">
-              <p className="font-semibold mb-1">Menunggu Persetujuan</p>
+        ) : formSubmitted ? (
+          /* After submitting: show waiting confirmation */
+          <div className="space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-800">
+              <p className="font-semibold mb-1">Permohonan Terkirim!</p>
               <p>
-                Admin belum menyetujui akun Anda. Kirim permintaan persetujuan
-                atau hubungi administrator sistem.
+                Data Anda telah dikirim ke admin. Silakan tunggu persetujuan.
+                Anda akan mendapat akses setelah admin menyetujui permohonan
+                Anda.
               </p>
             </div>
             <Button
-              data-ocid="approval.request.primary_button"
-              className="w-full mb-3"
-              onClick={handleRequestApproval}
-              disabled={requestApproval.isPending}
+              data-ocid="approval.logout.button"
+              variant="outline"
+              className="w-full"
+              onClick={clear}
             >
-              {requestApproval.isPending ? (
+              Keluar
+            </Button>
+          </div>
+        ) : (
+          /* Waiting mode: Employee data form */
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-2">
+              <ClipboardList size={14} className="text-blue-600 shrink-0" />
+              <p className="text-xs text-blue-700">
+                Lengkapi data pegawai berikut untuk mengajukan permohonan
+                pendaftaran. Field bertanda{" "}
+                <span className="text-red-500">*</span> wajib diisi.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2 space-y-1">
+                <Label className="text-xs font-medium">
+                  Nama Lengkap <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  placeholder="Nama lengkap"
+                  value={empForm.fullName}
+                  onChange={(e) => setField("fullName", e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">
+                  NIP <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  placeholder="Nomor Induk Pegawai"
+                  value={empForm.nip}
+                  onChange={(e) => setField("nip", e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">
+                  Jabatan <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={empForm.position}
+                  onValueChange={(v) => setField("position", v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih jabatan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {JABATAN_OPTIONS.map((j) => (
+                      <SelectItem key={j} value={j}>
+                        {j}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Jenis Kelamin</Label>
+                <Select
+                  value={empForm.gender}
+                  onValueChange={(v) => setField("gender", v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="male">Laki-laki</SelectItem>
+                    <SelectItem value="female">Perempuan</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Tanggal Lahir</Label>
+                <Input
+                  type="date"
+                  value={empForm.birthDate}
+                  onChange={(e) => setField("birthDate", e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Tempat Lahir</Label>
+                <Input
+                  placeholder="Kota/Kabupaten lahir"
+                  value={empForm.birthPlace}
+                  onChange={(e) => setField("birthPlace", e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">
+                  Kecamatan <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  placeholder="Kecamatan"
+                  value={empForm.kecamatan}
+                  onChange={(e) => setField("kecamatan", e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Kabupaten/Kota</Label>
+                <Input
+                  placeholder="Kabupaten/Kota"
+                  value={empForm.kabupaten}
+                  onChange={(e) => setField("kabupaten", e.target.value)}
+                />
+              </div>
+
+              <div className="col-span-2 space-y-1">
+                <Label className="text-xs font-medium">Provinsi</Label>
+                <Input
+                  placeholder="Provinsi"
+                  value={empForm.provinsi}
+                  onChange={(e) => setField("provinsi", e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">No. HP</Label>
+                <Input
+                  placeholder="08xx-xxxx-xxxx"
+                  value={empForm.phone}
+                  onChange={(e) => setField("phone", e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Email</Label>
+                <Input
+                  type="email"
+                  placeholder="email@contoh.com"
+                  value={empForm.email}
+                  onChange={(e) => setField("email", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <Button
+              data-ocid="approval.request.primary_button"
+              className="w-full mt-2"
+              onClick={handleRequestApproval}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
                 <>
                   <Loader2 size={16} className="animate-spin mr-2" />
                   Mengirim...
                 </>
               ) : (
-                "Kirim Permintaan Persetujuan"
+                "Kirim Permohonan Pendaftaran"
               )}
             </Button>
             <Button
@@ -229,7 +472,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
             >
               Keluar
             </Button>
-          </>
+          </div>
         )}
       </motion.div>
 

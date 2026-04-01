@@ -10,13 +10,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, Clock, Loader2, XCircle } from "lucide-react";
+import { CheckCircle, Clock, Loader2, User, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import { Gender, Role, Status } from "../backend";
 import {
   ApprovalStatus,
+  useCreateEmployee,
   useListApprovals,
   useSetApproval,
 } from "../hooks/useQueries";
+import type { PendingApprovalEmployeeData } from "../mocks/localBackend";
 
 function statusBadge(status: ApprovalStatus) {
   const map: Record<
@@ -51,9 +54,23 @@ function statusBadge(status: ApprovalStatus) {
   );
 }
 
+function getPendingData(principal: string): PendingApprovalEmployeeData | null {
+  try {
+    const stored: Array<{
+      principal: string;
+      employeeData?: PendingApprovalEmployeeData;
+    }> = JSON.parse(localStorage.getItem("ekinerja_pending_approvals") || "[]");
+    const entry = stored.find((p) => p.principal === principal);
+    return entry?.employeeData ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default function PersetujuanPegawai() {
   const { data: approvals = [], isLoading } = useListApprovals();
   const setApproval = useSetApproval();
+  const createEmployee = useCreateEmployee();
 
   const pending = approvals.filter((a) => a.status === ApprovalStatus.pending);
   const approved = approvals.filter(
@@ -69,7 +86,37 @@ export default function PersetujuanPegawai() {
         user: principal,
         status: ApprovalStatus.approved,
       });
-      toast.success("Pengguna berhasil disetujui.");
+
+      // Auto-create employee from submitted form data
+      const empData = getPendingData(principal.toString());
+      if (empData) {
+        const birthDate = empData.birthDate
+          ? BigInt(new Date(empData.birthDate).getTime()) * 1_000_000n
+          : 0n;
+        const region = [empData.kecamatan, empData.kabupaten, empData.provinsi]
+          .filter(Boolean)
+          .join(" | ");
+
+        await createEmployee.mutateAsync({
+          id: 0n,
+          nip: empData.nip,
+          fullName: empData.fullName,
+          birthPlace: empData.birthPlace,
+          birthDate,
+          gender: empData.gender === "female" ? Gender.female : Gender.male,
+          position: empData.position,
+          region,
+          phone: empData.phone,
+          email: empData.email,
+          role: Role.penyuluh,
+          status: Status.active,
+          createdAt: 0n,
+          updatedAt: 0n,
+        });
+        toast.success("Pengguna disetujui dan data pegawai berhasil dibuat.");
+      } else {
+        toast.success("Pengguna berhasil disetujui.");
+      }
     } catch {
       toast.error("Gagal menyetujui pengguna.");
     }
@@ -105,7 +152,9 @@ export default function PersetujuanPegawai() {
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/40">
-            <TableHead>Principal</TableHead>
+            <TableHead>Data Pegawai</TableHead>
+            <TableHead>NIP / Jabatan</TableHead>
+            <TableHead>Wilayah</TableHead>
             <TableHead>Status</TableHead>
             {showActions && <TableHead>Aksi</TableHead>}
           </TableRow>
@@ -114,7 +163,7 @@ export default function PersetujuanPegawai() {
           {items.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={showActions ? 3 : 2}
+                colSpan={showActions ? 5 : 4}
                 className="text-center py-8 text-muted-foreground"
                 data-ocid="persetujuan.empty_state"
               >
@@ -122,48 +171,93 @@ export default function PersetujuanPegawai() {
               </TableCell>
             </TableRow>
           ) : (
-            items.map((a, idx) => (
-              <TableRow
-                key={a.principal.toString()}
-                data-ocid={`persetujuan.item.${idx + 1}`}
-              >
-                <TableCell className="font-mono text-sm">
-                  {a.principal.toString()}
-                </TableCell>
-                <TableCell>{statusBadge(a.status)}</TableCell>
-                {showActions && (
+            items.map((a, idx) => {
+              const emp = getPendingData(a.principal.toString());
+              return (
+                <TableRow
+                  key={a.principal.toString()}
+                  data-ocid={`persetujuan.item.${idx + 1}`}
+                >
                   <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        data-ocid={`persetujuan.approve.button.${idx + 1}`}
-                        size="sm"
-                        className="bg-green-600 hover:bg-green-700 text-white"
-                        onClick={() => handleApprove(a.principal)}
-                        disabled={setApproval.isPending}
-                      >
-                        {setApproval.isPending ? (
-                          <Loader2 size={12} className="animate-spin" />
-                        ) : (
-                          <CheckCircle size={14} />
-                        )}
-                        <span className="ml-1">Setujui</span>
-                      </Button>
-                      <Button
-                        data-ocid={`persetujuan.reject.button.${idx + 1}`}
-                        size="sm"
-                        variant="outline"
-                        className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                        onClick={() => handleReject(a.principal)}
-                        disabled={setApproval.isPending}
-                      >
-                        <XCircle size={14} />
-                        <span className="ml-1">Tolak</span>
-                      </Button>
-                    </div>
+                    {emp ? (
+                      <div>
+                        <p className="font-medium text-sm">{emp.fullName}</p>
+                        <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                          {a.principal.toString().substring(0, 20)}...
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <User size={14} className="text-muted-foreground" />
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {a.principal.toString().substring(0, 24)}...
+                        </span>
+                      </div>
+                    )}
                   </TableCell>
-                )}
-              </TableRow>
-            ))
+                  <TableCell>
+                    {emp ? (
+                      <div>
+                        <p className="text-sm font-mono">{emp.nip || "-"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {emp.position || "-"}
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {emp ? (
+                      <div className="text-sm">
+                        <p>{emp.kecamatan || "-"}</p>
+                        {emp.kabupaten && (
+                          <p className="text-xs text-muted-foreground">
+                            {emp.kabupaten}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>{statusBadge(a.status)}</TableCell>
+                  {showActions && (
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button
+                          data-ocid={`persetujuan.approve.button.${idx + 1}`}
+                          size="sm"
+                          className="bg-green-600 hover:bg-green-700 text-white"
+                          onClick={() => handleApprove(a.principal)}
+                          disabled={
+                            setApproval.isPending || createEmployee.isPending
+                          }
+                        >
+                          {setApproval.isPending || createEmployee.isPending ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <CheckCircle size={14} />
+                          )}
+                          <span className="ml-1">Setujui</span>
+                        </Button>
+                        <Button
+                          data-ocid={`persetujuan.reject.button.${idx + 1}`}
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                          onClick={() => handleReject(a.principal)}
+                          disabled={setApproval.isPending}
+                        >
+                          <XCircle size={14} />
+                          <span className="ml-1">Tolak</span>
+                        </Button>
+                      </div>
+                    </TableCell>
+                  )}
+                </TableRow>
+              );
+            })
           )}
         </TableBody>
       </Table>
