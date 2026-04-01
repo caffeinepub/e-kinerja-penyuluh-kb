@@ -28,18 +28,6 @@ import {
   useAllWorkTargets,
 } from "../hooks/useQueries";
 
-const WILAYAH_OPTIONS = [
-  "all",
-  "Kecamatan Medan Kota",
-  "Kecamatan Medan Baru",
-  "Kecamatan Medan Timur",
-  "Kecamatan Medan Barat",
-  "Kecamatan Medan Selatan",
-  "Kecamatan Medan Utara",
-  "Kecamatan Medan Tembung",
-  "Kecamatan Medan Amplas",
-];
-
 function ratingLabel(r: WorkRating): string {
   return r === WorkRating.baik
     ? "Baik"
@@ -65,6 +53,16 @@ export default function DownloadLaporan() {
     return ["all", ...Array.from(set).sort().reverse()];
   }, [targets]);
 
+  // Kecamatan dinamis dari data pegawai
+  const wilayahOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const emp of employees) {
+      const kecamatan = emp.region.split(" | ")[0].trim();
+      if (kecamatan) set.add(kecamatan);
+    }
+    return ["all", ...Array.from(set).sort()];
+  }, [employees]);
+
   const empMap = useMemo(
     () => new Map(employees.map((e) => [e.id.toString(), e])),
     [employees],
@@ -79,8 +77,9 @@ export default function DownloadLaporan() {
     return targets
       .filter((t) => {
         const emp = empMap.get(t.employeeId.toString());
+        const empKecamatan = emp?.region.split(" | ")[0].trim() ?? "";
         const matchWilayah =
-          filterWilayah === "all" || emp?.region === filterWilayah;
+          filterWilayah === "all" || empKecamatan === filterWilayah;
         const matchPeriod = filterPeriod === "all" || t.period === filterPeriod;
         const matchEmp =
           filterEmployee === "all" ||
@@ -99,7 +98,9 @@ export default function DownloadLaporan() {
       "Nama",
       "NIP",
       "Jabatan",
-      "Wilayah",
+      "Kecamatan",
+      "Kabupaten/Kota",
+      "Provinsi",
       "Periode",
       "Jenis Kegiatan",
       "Indikator",
@@ -110,21 +111,29 @@ export default function DownloadLaporan() {
       "Penilaian",
       "Catatan",
     ];
-    const rows = previewData.map(({ emp, t, real }) => [
-      emp?.fullName ?? "-",
-      emp?.nip ?? "-",
-      emp?.position ?? "-",
-      emp?.region ?? "-",
-      t.period,
-      t.activityType,
-      t.indicator,
-      t.unit,
-      t.targetValue,
-      real?.realizedValue ?? "-",
-      real?.achievementPercent ?? "-",
-      real ? ratingLabel(real.rating as WorkRating) : "-",
-      real?.supervisorNotes ?? "-",
-    ]);
+    const rows = previewData.map(({ emp, t, real }) => {
+      const regionParts = emp?.region?.split(" | ") ?? [];
+      const kecamatan = regionParts[0]?.trim() ?? "-";
+      const kabupaten = regionParts[1]?.trim() ?? "-";
+      const provinsi = regionParts[2]?.trim() ?? "-";
+      return [
+        emp?.fullName ?? "-",
+        emp?.nip ?? "-",
+        emp?.position ?? "-",
+        kecamatan,
+        kabupaten,
+        provinsi,
+        t.period,
+        t.activityType,
+        t.indicator,
+        t.unit,
+        t.targetValue,
+        real?.realizedValue ?? "-",
+        real?.achievementPercent ?? "-",
+        real ? ratingLabel(real.rating as WorkRating) : "-",
+        real?.supervisorNotes ?? "-",
+      ];
+    });
     const csv = [headers, ...rows]
       .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
       .join("\n");
@@ -143,12 +152,16 @@ export default function DownloadLaporan() {
     const win = window.open("", "_blank");
     if (!win) return;
     const rows = previewData
-      .map(
-        ({ emp, t, real }) => `
+      .map(({ emp, t, real }) => {
+        const regionParts = emp?.region?.split(" | ") ?? [];
+        const kecamatan = regionParts[0]?.trim() ?? "-";
+        const kabupaten = regionParts[1]?.trim() ?? "-";
+        return `
       <tr>
         <td>${emp?.fullName ?? "-"}</td>
         <td>${emp?.nip ?? "-"}</td>
-        <td>${emp?.region ?? "-"}</td>
+        <td>${kecamatan}</td>
+        <td>${kabupaten}</td>
         <td>${t.period}</td>
         <td>${t.activityType}</td>
         <td>${t.targetValue} ${t.unit}</td>
@@ -156,8 +169,8 @@ export default function DownloadLaporan() {
         <td>${real?.achievementPercent ?? "-"}%</td>
         <td>${real ? ratingLabel(real.rating as WorkRating) : "-"}</td>
       </tr>
-    `,
-      )
+    `;
+      })
       .join("");
     win.document.write(`
       <!DOCTYPE html>
@@ -182,8 +195,9 @@ export default function DownloadLaporan() {
         <table>
           <thead>
             <tr>
-              <th>Nama</th><th>NIP</th><th>Wilayah</th><th>Periode</th>
-              <th>Kegiatan</th><th>Target</th><th>Realisasi</th><th>Capaian</th><th>Penilaian</th>
+              <th>Nama</th><th>NIP</th><th>Kecamatan</th><th>Kabupaten/Kota</th>
+              <th>Periode</th><th>Kegiatan</th><th>Target</th><th>Realisasi</th>
+              <th>Capaian</th><th>Penilaian</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -235,7 +249,7 @@ export default function DownloadLaporan() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Wilayah</Label>
+              <Label>Kecamatan</Label>
               <Select value={filterWilayah} onValueChange={setFilterWilayah}>
                 <SelectTrigger
                   data-ocid="laporan.wilayah.select"
@@ -244,9 +258,9 @@ export default function DownloadLaporan() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {WILAYAH_OPTIONS.map((w) => (
+                  {wilayahOptions.map((w) => (
                     <SelectItem key={w} value={w}>
-                      {w === "all" ? "Semua Wilayah" : w}
+                      {w === "all" ? "Semua Kecamatan" : w}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -311,7 +325,8 @@ export default function DownloadLaporan() {
                 <TableRow className="bg-muted/40">
                   <TableHead>Nama</TableHead>
                   <TableHead>NIP</TableHead>
-                  <TableHead>Wilayah</TableHead>
+                  <TableHead>Kecamatan</TableHead>
+                  <TableHead>Kabupaten/Kota</TableHead>
                   <TableHead>Periode</TableHead>
                   <TableHead>Kegiatan</TableHead>
                   <TableHead className="text-right">Target</TableHead>
@@ -324,7 +339,7 @@ export default function DownloadLaporan() {
                 {previewData.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={10}
                       className="text-center py-10 text-muted-foreground"
                       data-ocid="laporan.empty_state"
                     >
@@ -332,76 +347,80 @@ export default function DownloadLaporan() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  previewData.map(({ emp, t, real }, idx) => (
-                    <TableRow
-                      key={t.id.toString()}
-                      data-ocid={`laporan.item.${idx + 1}`}
-                    >
-                      <TableCell className="text-sm font-medium">
-                        {emp?.fullName ?? "-"}
-                      </TableCell>
-                      <TableCell className="text-sm font-mono">
-                        {emp?.nip ?? "-"}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {emp?.region ?? "-"}
-                      </TableCell>
-                      <TableCell className="text-sm font-mono">
-                        {t.period}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {t.activityType}
-                      </TableCell>
-                      <TableCell className="text-right text-sm">
-                        {t.targetValue} {t.unit}
-                      </TableCell>
-                      <TableCell className="text-right text-sm">
-                        {real ? (
-                          `${real.realizedValue} ${t.unit}`
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span
-                          className={`text-sm font-semibold ${
-                            !real
-                              ? "text-muted-foreground"
-                              : real.achievementPercent >= 80
-                                ? "text-green-600"
-                                : real.achievementPercent >= 60
-                                  ? "text-amber-600"
-                                  : "text-red-600"
-                          }`}
-                        >
-                          {real ? `${real.achievementPercent}%` : "-"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {real ? (
-                          <Badge
-                            variant="outline"
-                            className={
-                              {
-                                [WorkRating.baik]:
-                                  "bg-green-100 text-green-700 border-green-200",
-                                [WorkRating.cukup]:
-                                  "bg-amber-100 text-amber-700 border-amber-200",
-                                [WorkRating.kurang]:
-                                  "bg-red-100 text-red-700 border-red-200",
-                              }[real.rating as WorkRating]
-                            }
+                  previewData.map(({ emp, t, real }, idx) => {
+                    const regionParts = emp?.region?.split(" | ") ?? [];
+                    const kecamatan = regionParts[0]?.trim() ?? "-";
+                    const kabupaten = regionParts[1]?.trim() ?? "-";
+                    return (
+                      <TableRow
+                        key={t.id.toString()}
+                        data-ocid={`laporan.item.${idx + 1}`}
+                      >
+                        <TableCell className="text-sm font-medium">
+                          {emp?.fullName ?? "-"}
+                        </TableCell>
+                        <TableCell className="text-sm font-mono">
+                          {emp?.nip ?? "-"}
+                        </TableCell>
+                        <TableCell className="text-sm">{kecamatan}</TableCell>
+                        <TableCell className="text-sm">{kabupaten}</TableCell>
+                        <TableCell className="text-sm font-mono">
+                          {t.period}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {t.activityType}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {t.targetValue} {t.unit}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          {real ? (
+                            `${real.realizedValue} ${t.unit}`
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span
+                            className={`text-sm font-semibold ${
+                              !real
+                                ? "text-muted-foreground"
+                                : real.achievementPercent >= 80
+                                  ? "text-green-600"
+                                  : real.achievementPercent >= 60
+                                    ? "text-amber-600"
+                                    : "text-red-600"
+                            }`}
                           >
-                            {ratingLabel(real.rating as WorkRating)}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">
-                            -
+                            {real ? `${real.achievementPercent}%` : "-"}
                           </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                        </TableCell>
+                        <TableCell>
+                          {real ? (
+                            <Badge
+                              variant="outline"
+                              className={
+                                {
+                                  [WorkRating.baik]:
+                                    "bg-green-100 text-green-700 border-green-200",
+                                  [WorkRating.cukup]:
+                                    "bg-amber-100 text-amber-700 border-amber-200",
+                                  [WorkRating.kurang]:
+                                    "bg-red-100 text-red-700 border-red-200",
+                                }[real.rating as WorkRating]
+                              }
+                            >
+                              {ratingLabel(real.rating as WorkRating)}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">
+                              -
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
