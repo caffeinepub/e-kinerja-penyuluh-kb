@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Loader2, LogIn, ShieldCheck } from "lucide-react";
+import { KeyRound, Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
@@ -12,7 +12,7 @@ interface LoginPageProps {
 
 export default function LoginPage({ mode }: LoginPageProps) {
   const { login, isLoggingIn, clear } = useInternetIdentity();
-  const { refetchAuth } = useAuth();
+  const { refetchAuth, hasAdminToken } = useAuth();
   const requestApproval = useRequestApproval();
 
   const handleRequestApproval = async () => {
@@ -60,7 +60,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
         <h1 className="text-center text-xl font-bold text-foreground mb-1">
           e-Kinerja Penyuluh KB
         </h1>
-        <p className="text-center text-sm text-muted-foreground mb-8">
+        <p className="text-center text-sm text-muted-foreground mb-6">
           {mode === "login"
             ? "Sistem Manajemen Kinerja Penyuluh Keluarga Berencana"
             : "Akun Anda sedang menunggu persetujuan admin"}
@@ -68,6 +68,14 @@ export default function LoginPage({ mode }: LoginPageProps) {
 
         {mode === "login" ? (
           <>
+            {hasAdminToken && (
+              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mb-4">
+                <KeyRound size={14} className="text-green-600 shrink-0" />
+                <p className="text-xs text-green-700">
+                  Token admin terdeteksi. Login untuk masuk sebagai Admin.
+                </p>
+              </div>
+            )}
             <Button
               data-ocid="login.primary_button"
               className="w-full"
