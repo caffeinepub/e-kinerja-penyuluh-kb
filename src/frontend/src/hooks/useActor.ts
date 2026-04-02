@@ -10,11 +10,19 @@ const ACTOR_QUERY_KEY = "actor";
 export function useActor() {
   const { identity } = useInternetIdentity();
   const queryClient = useQueryClient();
+
+  // Check local admin mode synchronously so queries are immediately enabled
+  const isLocalAdmin = localStorage.getItem("localAdminMode") === "true";
+
   const actorQuery = useQuery<backendInterface>({
-    queryKey: [ACTOR_QUERY_KEY, identity?.getPrincipal().toString()],
+    queryKey: [
+      ACTOR_QUERY_KEY,
+      identity?.getPrincipal().toString(),
+      isLocalAdmin,
+    ],
     queryFn: async () => {
-      // Use local backend when admin is in local mode
-      if (localStorage.getItem("localAdminMode") === "true") {
+      // Local admin mode: use localStorage backend, never call ICP
+      if (isLocalAdmin) {
         return createLocalBackend();
       }
 
@@ -38,7 +46,6 @@ export function useActor() {
     },
     // Only refetch when identity changes
     staleTime: Number.POSITIVE_INFINITY,
-    // This will cause the actor to be recreated when the identity changes
     enabled: true,
   });
 
