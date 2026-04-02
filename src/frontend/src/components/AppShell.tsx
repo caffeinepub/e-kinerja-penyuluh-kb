@@ -15,6 +15,7 @@ import {
   ScrollText,
   ShieldCheck,
   Target,
+  UserCircle,
   Users,
   X,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
+import { ProfileDialog } from "./ProfileDialog";
 
 export type Page =
   | "dashboard"
@@ -30,7 +32,6 @@ export type Page =
   | "penilaian"
   | "rekapitulasi"
   | "laporan"
-  | "persetujuan"
   | "audit";
 
 interface NavItem {
@@ -47,12 +48,6 @@ const NAV_ITEMS: NavItem[] = [
     id: "pegawai",
     label: "Data Pegawai",
     icon: <Users size={18} />,
-    adminOnly: true,
-  },
-  {
-    id: "persetujuan",
-    label: "Persetujuan",
-    icon: <ShieldCheck size={18} />,
     adminOnly: true,
   },
   { id: "target", label: "Target Kinerja", icon: <Target size={18} /> },
@@ -78,7 +73,6 @@ const PAGE_TITLES: Record<Page, string> = {
   penilaian: "Penilaian Hasil Kerja",
   rekapitulasi: "Rekapitulasi Kinerja",
   laporan: "Download Laporan",
-  persetujuan: "Persetujuan Pegawai",
   audit: "Audit Log Aktivitas",
 };
 
@@ -87,6 +81,23 @@ interface AppShellProps {
   onNavigate: (page: Page) => void;
   children: ReactNode;
   notifCount?: number;
+}
+
+function getPenyuluhName(principalStr: string): string | null {
+  try {
+    const principalMap: Record<string, number> = JSON.parse(
+      localStorage.getItem("ekinerja_principal_employee") || "{}",
+    );
+    const empId = principalMap[principalStr];
+    if (!empId) return null;
+    const employees: Array<{ id: number; fullName: string }> = JSON.parse(
+      localStorage.getItem("ekinerja_employees") || "[]",
+    );
+    const emp = employees.find((e) => e.id === empId);
+    return emp?.fullName || null;
+  } catch {
+    return null;
+  }
 }
 
 export function AppShell({
@@ -98,11 +109,16 @@ export function AppShell({
   const { clear, identity } = useInternetIdentity();
   const { role, isLocalAdmin, logoutLocalAdmin } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const principalStr = identity?.getPrincipal().toString() ?? "";
-  const shortPrincipal = isLocalAdmin
+  const penyuluhName = isLocalAdmin ? null : getPenyuluhName(principalStr);
+  const displayName = isLocalAdmin
     ? "Admin Lokal"
-    : `${principalStr.slice(0, 5)}...${principalStr.slice(-3)}`;
+    : penyuluhName ||
+      (principalStr
+        ? `${principalStr.slice(0, 5)}...${principalStr.slice(-3)}`
+        : "");
 
   const visibleNav = NAV_ITEMS.filter((item) => {
     if (item.adminOnly && role !== "admin") return false;
@@ -179,7 +195,7 @@ export function AppShell({
           </Avatar>
           <div className="flex-1 min-w-0">
             <p className="text-white text-xs font-medium truncate">
-              {shortPrincipal}
+              {displayName}
             </p>
             <div className="flex items-center gap-1">
               <Badge
@@ -200,6 +216,19 @@ export function AppShell({
             </div>
           </div>
         </div>
+
+        {!isLocalAdmin && (
+          <button
+            type="button"
+            data-ocid="nav.profile.button"
+            onClick={() => setProfileOpen(true)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 text-sm transition-colors mb-1"
+          >
+            <UserCircle size={16} />
+            <span>Edit Profil</span>
+          </button>
+        )}
+
         <button
           type="button"
           data-ocid="nav.logout.button"
@@ -287,7 +316,10 @@ export function AppShell({
                 )}
               </Button>
             </div>
-            <Avatar className="h-8 w-8 cursor-pointer">
+            <Avatar
+              className="h-8 w-8 cursor-pointer"
+              onClick={!isLocalAdmin ? () => setProfileOpen(true) : undefined}
+            >
               <AvatarFallback className="bg-primary text-primary-foreground text-xs">
                 {role === "admin" ? "AD" : "PY"}
               </AvatarFallback>
@@ -308,6 +340,8 @@ export function AppShell({
           </motion.div>
         </main>
       </div>
+
+      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </div>
   );
 }

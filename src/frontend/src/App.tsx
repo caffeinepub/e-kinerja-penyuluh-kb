@@ -11,7 +11,6 @@ import DownloadLaporan from "./pages/DownloadLaporan";
 import LoginPage from "./pages/LoginPage";
 import ManajemenPegawai from "./pages/ManajemenPegawai";
 import PenilaianKerja from "./pages/PenilaianKerja";
-import PersetujuanPegawai from "./pages/PersetujuanPegawai";
 import Rekapitulasi from "./pages/Rekapitulasi";
 import TargetKinerja from "./pages/TargetKinerja";
 
@@ -58,8 +57,6 @@ function AppRouter() {
         return <Rekapitulasi />;
       case "laporan":
         return <DownloadLaporan />;
-      case "persetujuan":
-        return role === "admin" ? <PersetujuanPegawai /> : <Dashboard />;
       case "audit":
         return role === "admin" ? <AuditLog /> : <Dashboard />;
       default:

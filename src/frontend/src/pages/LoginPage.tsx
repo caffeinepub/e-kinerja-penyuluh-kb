@@ -105,12 +105,14 @@ export default function LoginPage({ mode }: LoginPageProps) {
       const employees: unknown[] = JSON.parse(
         localStorage.getItem("ekinerja_employees") || "[]",
       );
-      const empExists = (employees as Array<{ nip: string }>).some(
+      const existingIdx = (employees as Array<{ nip: string }>).findIndex(
         (e) => e.nip === empForm.nip,
       );
-      if (!empExists) {
+      let empId: number;
+      if (existingIdx === -1) {
+        empId = Date.now();
         const newEmp = {
-          id: Date.now(),
+          id: empId,
           nip: empForm.nip,
           fullName: empForm.fullName,
           birthPlace: empForm.birthPlace,
@@ -129,9 +131,21 @@ export default function LoginPage({ mode }: LoginPageProps) {
         };
         employees.push(newEmp);
         localStorage.setItem("ekinerja_employees", JSON.stringify(employees));
+      } else {
+        empId = (employees[existingIdx] as { id: number }).id;
       }
 
-      // Mark principal as auto-registered so AuthContext grants access
+      // Save principal → employeeId mapping
+      const principalMap: Record<string, number> = JSON.parse(
+        localStorage.getItem("ekinerja_principal_employee") || "{}",
+      );
+      principalMap[principal] = empId;
+      localStorage.setItem(
+        "ekinerja_principal_employee",
+        JSON.stringify(principalMap),
+      );
+
+      // Mark principal as auto-registered so useActor grants local backend
       const autoReg: string[] = JSON.parse(
         localStorage.getItem("ekinerja_auto_registered") || "[]",
       );
