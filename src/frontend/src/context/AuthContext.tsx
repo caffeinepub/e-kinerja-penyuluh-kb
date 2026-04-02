@@ -43,6 +43,18 @@ const AuthContext = createContext<AuthContextValue>({
   logoutLocalAdmin: () => {},
 });
 
+// Check if current principal is auto-registered (skips admin approval)
+function isAutoRegistered(principal: string): boolean {
+  try {
+    const list: string[] = JSON.parse(
+      localStorage.getItem("ekinerja_auto_registered") || "[]",
+    );
+    return list.includes(principal);
+  } catch {
+    return false;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { identity, isInitializing } = useInternetIdentity();
   const { actor, isFetching } = useActor();
@@ -74,6 +86,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoadingAuth(false);
       return;
     }
+
+    // Check auto-registration first
+    if (identity) {
+      const principal = identity.getPrincipal().toString();
+      if (isAutoRegistered(principal)) {
+        setRole("penyuluh");
+        setIsApproved(true);
+        setIsLoadingAuth(false);
+        return;
+      }
+    }
+
     if (!actor) return;
     setIsLoadingAuth(true);
     Promise.all([actor.isCallerAdmin(), actor.isCallerApproved()])
@@ -104,6 +128,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoadingAuth(false);
       return;
     }
+
+    // Check auto-registration before calling backend
+    const principal = identity.getPrincipal().toString();
+    if (isAutoRegistered(principal)) {
+      setRole("penyuluh");
+      setIsApproved(true);
+      setIsLoadingAuth(false);
+      return;
+    }
+
     setIsLoadingAuth(true);
     Promise.all([actor.isCallerAdmin(), actor.isCallerApproved()])
       .then(([admin, approved]) => {

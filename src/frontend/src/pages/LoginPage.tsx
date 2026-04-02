@@ -20,7 +20,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ADMIN_TOKEN, useAuth } from "../context/AuthContext";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import { useRequestApproval } from "../hooks/useQueries";
 import type { PendingApprovalEmployeeData } from "../mocks/localBackend";
 
 interface LoginPageProps {
@@ -53,16 +52,13 @@ const EMPTY_FORM: PendingApprovalEmployeeData = {
 export default function LoginPage({ mode }: LoginPageProps) {
   const { login, isLoggingIn, clear, identity } = useInternetIdentity();
   const { refetchAuth, hasAdminToken } = useAuth();
-  const requestApproval = useRequestApproval();
   const [adminPassword, setAdminPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Employee data form for waiting mode
   const [empForm, setEmpForm] =
     useState<PendingApprovalEmployeeData>(EMPTY_FORM);
-  const [formSubmitted, setFormSubmitted] = useState(false);
 
-  const handleRequestApproval = async () => {
+  const handleRegisterAndAccess = () => {
     if (
       !empForm.nip ||
       !empForm.fullName ||
@@ -77,40 +73,80 @@ export default function LoginPage({ mode }: LoginPageProps) {
 
     setIsSubmitting(true);
     try {
-      // Save employee data to localStorage for admin to see
       const principal = identity?.getPrincipal().toString() ?? "unknown";
-      const stored: unknown[] = JSON.parse(
+      const region = [empForm.kecamatan, empForm.kabupaten, empForm.provinsi]
+        .filter(Boolean)
+        .join(" | ");
+
+      // Save to pending approvals so admin can see it
+      const pending: unknown[] = JSON.parse(
         localStorage.getItem("ekinerja_pending_approvals") || "[]",
       );
-      const existing = (stored as Array<{ principal: string }>).findIndex(
+      const pidx = (pending as Array<{ principal: string }>).findIndex(
         (p) => p.principal === principal,
       );
-      const entry = {
+      const pentry = {
         principal,
-        status: "pending",
+        status: "approved",
         requestedAt: Date.now(),
         employeeData: empForm,
       };
-      if (existing !== -1) {
-        (stored as Array<typeof entry>)[existing] = entry;
+      if (pidx !== -1) {
+        (pending as Array<typeof pentry>)[pidx] = pentry;
       } else {
-        (stored as Array<typeof entry>).push(entry);
+        (pending as Array<typeof pentry>).push(pentry);
       }
       localStorage.setItem(
         "ekinerja_pending_approvals",
-        JSON.stringify(stored),
+        JSON.stringify(pending),
       );
 
-      await requestApproval.mutateAsync();
-      toast.success("Permohonan pendaftaran berhasil dikirim ke admin.");
-      setFormSubmitted(true);
+      // Auto-create employee record so admin sees it in Manajemen Pegawai
+      const employees: unknown[] = JSON.parse(
+        localStorage.getItem("ekinerja_employees") || "[]",
+      );
+      const empExists = (employees as Array<{ nip: string }>).some(
+        (e) => e.nip === empForm.nip,
+      );
+      if (!empExists) {
+        const newEmp = {
+          id: Date.now(),
+          nip: empForm.nip,
+          fullName: empForm.fullName,
+          birthPlace: empForm.birthPlace,
+          birthDate: empForm.birthDate
+            ? new Date(empForm.birthDate).getTime()
+            : 0,
+          gender: empForm.gender,
+          position: empForm.position,
+          region,
+          phone: empForm.phone,
+          email: empForm.email,
+          role: "penyuluh",
+          status: "active",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        employees.push(newEmp);
+        localStorage.setItem("ekinerja_employees", JSON.stringify(employees));
+      }
+
+      // Mark principal as auto-registered so AuthContext grants access
+      const autoReg: string[] = JSON.parse(
+        localStorage.getItem("ekinerja_auto_registered") || "[]",
+      );
+      if (!autoReg.includes(principal)) {
+        autoReg.push(principal);
+        localStorage.setItem(
+          "ekinerja_auto_registered",
+          JSON.stringify(autoReg),
+        );
+      }
+
+      toast.success("Data berhasil disimpan. Selamat datang!");
       refetchAuth();
     } catch {
-      // Even if ICP call fails, the localStorage data is saved for admin
-      toast.success(
-        "Data pendaftaran berhasil disimpan. Menunggu persetujuan admin.",
-      );
-      setFormSubmitted(true);
+      toast.error("Terjadi kesalahan, coba lagi.");
     } finally {
       setIsSubmitting(false);
     }
@@ -173,7 +209,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
         <p className="text-center text-sm text-muted-foreground mb-6">
           {mode === "login"
             ? "Sistem Manajemen Kinerja Penyuluh Keluarga Berencana"
-            : "Daftarkan diri Anda sebagai Penyuluh KB"}
+            : "Lengkapi data diri Anda untuk mulai menggunakan sistem"}
         </p>
 
         {mode === "login" ? (
@@ -290,35 +326,15 @@ export default function LoginPage({ mode }: LoginPageProps) {
               </>
             )}
           </>
-        ) : formSubmitted ? (
-          /* After submitting: show waiting confirmation */
-          <div className="space-y-4">
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-800">
-              <p className="font-semibold mb-1">Permohonan Terkirim!</p>
-              <p>
-                Data Anda telah dikirim ke admin. Silakan tunggu persetujuan.
-                Anda akan mendapat akses setelah admin menyetujui permohonan
-                Anda.
-              </p>
-            </div>
-            <Button
-              data-ocid="approval.logout.button"
-              variant="outline"
-              className="w-full"
-              onClick={clear}
-            >
-              Keluar
-            </Button>
-          </div>
         ) : (
-          /* Waiting mode: Employee data form */
+          /* Waiting mode: Employee data form — now auto-approves on submit */
           <div className="space-y-4">
             <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-2">
               <ClipboardList size={14} className="text-blue-600 shrink-0" />
               <p className="text-xs text-blue-700">
-                Lengkapi data pegawai berikut untuk mengajukan permohonan
-                pendaftaran. Field bertanda{" "}
-                <span className="text-red-500">*</span> wajib diisi.
+                Lengkapi data pegawai berikut untuk langsung mengakses sistem.
+                Field bertanda <span className="text-red-500">*</span> wajib
+                diisi.
               </p>
             </div>
 
@@ -452,16 +468,16 @@ export default function LoginPage({ mode }: LoginPageProps) {
             <Button
               data-ocid="approval.request.primary_button"
               className="w-full mt-2"
-              onClick={handleRequestApproval}
+              onClick={handleRegisterAndAccess}
               disabled={isSubmitting}
             >
               {isSubmitting ? (
                 <>
                   <Loader2 size={16} className="animate-spin mr-2" />
-                  Mengirim...
+                  Menyimpan...
                 </>
               ) : (
-                "Kirim Permohonan Pendaftaran"
+                "Simpan Data & Masuk ke Dashboard"
               )}
             </Button>
             <Button
